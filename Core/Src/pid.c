@@ -180,7 +180,7 @@ void PID_struct_init(
     /*init function pointer*/
     pid->f_param_init = pid_param_init;
     pid->f_pid_reset = pid_reset;
-//	pid->f_cal_pid = pid_calc;	
+	// pid->f_cal_pid = pid_calc;	
 //	pid->f_cal_sp_pid = pid_sp_calc;	//addition
 		
     /*init pid param */

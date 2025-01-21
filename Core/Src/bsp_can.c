@@ -58,7 +58,7 @@ void my_can_filter_init_recv_all(CAN_HandleTypeDef* _hcan) {
   CAN_FilterConfigStructure.FilterMaskIdLow = 0x0000;                 // 过滤器掩码低位
   CAN_FilterConfigStructure.FilterFIFOAssignment = CAN_FILTER_FIFO0;  // 指定FIFO
   CAN_FilterConfigStructure.FilterActivation = ENABLE;                // 启用过滤器
-                                                                      // CAN1的第一个过滤器（0号过滤器）
+  CAN_FilterConfigStructure.SlaveStartFilterBank = 14;                // CAN1 and CAN2 split all 28 filters
   // 配置 CAN1 过滤器
   if (HAL_CAN_ConfigFilter(_hcan, &CAN_FilterConfigStructure) != HAL_OK) {
     // 错误处理代码
@@ -72,7 +72,7 @@ void my_can_filter_init_recv_all(CAN_HandleTypeDef* _hcan) {
  * @Retval		None
  * @Date     2015/11/24
  *******************************************************************************************/
-void RxFifo1MsgPendingCallback(CAN_HandleTypeDef* _hcan) {
+void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef* _hcan) {
   CAN_RxHeaderTypeDef RxHeader;
   uint8_t RxData[8];  // 假设最多 8 字节数据
 
