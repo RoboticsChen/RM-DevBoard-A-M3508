@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "**/frontmatter.json": "jsonc",
+        "**/.frontmatter/config/*.json": "jsonc",
+        "charconv": "c",
+        "compare": "c",
+        "cstdint": "c",
+        "format": "cpp",
+        "filesystem": "cpp"
+    }
+}

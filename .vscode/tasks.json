@@ -1,0 +1,35 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "RTT",
+            "type": "shell",
+            "command": "JLinkRTTClient",
+            "args": [],
+        },
+        {
+            "label": "Build",
+            "group": "build",
+            "type": "shell",
+            "command": "cmake -B ${workspaceFolder}/build && cmake --build ${workspaceFolder}/build -j32"
+        },
+        {
+            "label": "Clean",
+            "group": "build",
+            "type": "shell",
+            "command": "rm -rf ${workspaceFolder}/build"
+        },
+        {
+            "label": "Flash",
+            "group": "build",
+            "type": "shell",
+            "command": "openocd -f interface/stlink.cfg -f target/stm32f4x.cfg -c \"program ${workspaceFolder}/build/${workspaceFolderBasename}.elf preverify verify reset exit\"",
+            "dependsOn": [
+                "Build"
+            ],
+            "dependsOrder": "sequence"
+        },
+    ]
+}
