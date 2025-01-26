@@ -66,7 +66,7 @@ typedef struct __pid_t {
 
 void PID_struct_init(pid_t* pid, uint32_t mode, uint32_t maxout, uint32_t intergral_limit,
 
-                     float kp, float ki, float kd);
+                     float kp, float ki, float kd, float dead_band);
 
 float pid_calc(pid_t* pid, float fdb, float ref);
 
@@ -84,5 +84,5 @@ extern pid_t pid_imu_tmp;   // imu_temperature
 extern pid_t pid_cali_bby;  // big buff yaw
 extern pid_t pid_cali_bbp;
 extern pid_t pid_omg;
-extern pid_t pid_pos;
+extern pid_t pid_pos[4];
 #endif

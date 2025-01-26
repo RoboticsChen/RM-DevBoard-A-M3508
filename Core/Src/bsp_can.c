@@ -22,11 +22,13 @@
 *******************************************************************************/
 
 #include "bsp_can.h"
-#include "gpio.h"
-#include "log.h"
+
+#include <stdio.h>
 
 #include "can.h"
-// #include "cmsis_os.h"
+#include "gpio.h"
+#include "log.h"
+#include "usart.h"
 
 // moto_measure_t moto_pit;
 // moto_measure_t moto_yaw;
@@ -86,13 +88,14 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef* _hcan) {
         static uint8_t i;
         i = RxHeader.StdId - CAN_3510Moto1_ID;
 
-        if (moto_chassis[i].msg_cnt++ <= 50) {
+        moto_chassis[i].msg_cnt++;
+        if (moto_chassis[i].msg_cnt <= 50) {
           moto_chassis[i].angle = (uint16_t)(RxData[0] << 8 | RxData[1]);
           moto_chassis[i].offset_angle = moto_chassis[i].angle;
-        } else {
+        }else {
           get_moto_measure(&moto_chassis[i], RxData);
         }
-        get_moto_measure(&moto_info, RxData);
+
       } break;
     }
   }
@@ -122,6 +125,8 @@ void get_moto_measure(moto_measure_t* ptr, uint8_t* RxData) {
     ptr->round_cnt++;
 
   ptr->total_angle = ptr->round_cnt * 8192 + ptr->angle - ptr->offset_angle;
+  // int len = sprintf(str_buffer, "total angle = %ld, \t angle=%d\n", ptr->total_angle, ptr->angle);
+  // HAL_UART_Transmit_DMA(&huart1, (uint8_t*)str_buffer, len);
 }
 
 #define ABS(x) ((x > 0) ? (x) : (-x))
@@ -170,7 +175,7 @@ void set_moto_current(CAN_HandleTypeDef* hcan, int16_t iq1, int16_t iq2, int16_t
 
   // 发送 CAN 消息
   if (HAL_CAN_AddTxMessage(hcan, &TxHeader, TxData, &txMailbox) != HAL_OK) {
-    HAL_GPIO_WritePin(CAN_TX_ERR_GPIO_Port, CAN_TX_ERR_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(LED_ERR_GPIO_Port, LED_ERR_Pin, GPIO_PIN_RESET);
     LOGE("CAN Send Error");
   }
 }

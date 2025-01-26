@@ -21,6 +21,10 @@
             "showDevDebugOutput": "none",
             "gdbTarget": "remote localhost:3333",
             "gdbPath": "gdb-multiarch",
+            "liveWatch": {
+                "enabled": true,
+                "samplesPerSecond": 4
+            }
         }
     ]
 }

@@ -21,8 +21,10 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "can.h"
+#include "dma.h"
 #include "gpio.h"
 #include "main.h"
+#include "usart.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -59,9 +61,24 @@ void SystemClock_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-#define NUM_POSITIONS 4
-int target_angles[NUM_POSITIONS] = {0, 900, 1800, 2700};  // 预设目标角度
-int current_position_idx[2] = {0, 0};                     // 当前角度目标索引，分别控制ID3和ID4电机
+#define NUM_POSITIONS 5
+int target_angles[NUM_POSITIONS] = {0, -6400, 6400, 14000, -6400};  // 预设目标角度
+int current_position_idx[2] = {0, 0};
+// 当前角度目标索引，分别控制ID3和ID4电机
+void PID_Parameter_Init(void) {
+  // 1) 电机1、2速度PID的初始化
+  PID_struct_init(&pid_spd[0], POSITION_PID, 8000, 8000, 1.5f, 0.1f, 0.3f, 200);
+  PID_struct_init(&pid_spd[1], POSITION_PID, 8000, 8000, 1.5f, 0.1f, 0.3f, 200);
+
+  // 2) 电机3、4速度环PID初始化
+  PID_struct_init(&pid_spd[2], POSITION_PID, 2000, 2000, 1.0f, 0.0f, 0.3f, 200);
+  PID_struct_init(&pid_spd[3], POSITION_PID, 2000, 2000, 1.0f, 0.0f, 0.3f, 200);
+
+  // 3) 电机3、4位置环PID初始化（新增）
+  //    位置环一般P值不要太大，D值可适当加大以减少超调振荡。I视具体情况而定
+  PID_struct_init(&pid_pos[2], POSITION_PID, 2000, 2000, 1.0f, 0.0f, 0.3f, 200);
+  PID_struct_init(&pid_pos[3], POSITION_PID, 2000, 2000, 1.0f, 0.0f, 0.3f, 200);
+}
 
 void stop_all_motors() {
   for (int i = 0; i < 4; i++) {
@@ -70,22 +87,39 @@ void stop_all_motors() {
   set_moto_current(&hcan1, 0, 0, 0, 0);  // 发送停止指令
 }
 
-void set_motor_position(CAN_HandleTypeDef* hcan, int motor_id, int target_angle) {
-  // 设置目标位置的控制
-  // 根据电机的实际情况和控制逻辑来计算控制信号。这里假设有一个位置控制的PID。
-  // 目标角度已经通过target_angles数组传递。
-
-  if (motor_id == 2 || motor_id == 3) {                      // 3号和4号电机进行位置控制
-    int current_angle = moto_chassis[motor_id].total_angle;  // 获取当前角度
-    int error = target_angle - current_angle;
-    if (abs(error) < 100) {   // 位置控制的精度
-      set_spd[motor_id] = 0;  // 当接近目标位置时停止
-    } else {
-      // 设置PID控制，调节电机转速使其到达目标位置
-      set_spd[motor_id] = (error > 0) ? 100 : -100;  // 速度方向根据误差确定
-    }
+void handle_led(uint8_t number) {
+  switch (number) {
+    case 0:
+      HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, GPIO_PIN_SET);
+      HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_SET);
+      HAL_GPIO_WritePin(LED3_GPIO_Port, LED3_Pin, GPIO_PIN_SET);
+      HAL_GPIO_WritePin(LED4_GPIO_Port, LED4_Pin, GPIO_PIN_SET);
+      HAL_GPIO_WritePin(LED5_GPIO_Port, LED5_Pin, GPIO_PIN_SET);
+      HAL_GPIO_WritePin(LED6_GPIO_Port, LED6_Pin, GPIO_PIN_SET);
+      break;
+    case 1:
+      HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, GPIO_PIN_RESET);
+      break;
+    case 2:
+      HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_RESET);
+      break;
+    case 3:
+      HAL_GPIO_WritePin(LED3_GPIO_Port, LED3_Pin, GPIO_PIN_RESET);
+      break;
+    case 4:
+      HAL_GPIO_WritePin(LED4_GPIO_Port, LED4_Pin, GPIO_PIN_RESET);
+      break;
+    case 5:
+      HAL_GPIO_WritePin(LED5_GPIO_Port, LED5_Pin, GPIO_PIN_RESET);
+      break;
+    case 6:
+      HAL_GPIO_WritePin(LED6_GPIO_Port, LED6_Pin, GPIO_PIN_RESET);
+      break;
+    default:
+      break;
   }
 }
+
 /* USER CODE END 0 */
 
 /**
@@ -115,7 +149,9 @@ int main(void) {
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_CAN1_Init();
+  MX_UART4_Init();
   /* USER CODE BEGIN 2 */
   HAL_GPIO_WritePin(GPIOH, GPIO_PIN_2, GPIO_PIN_SET);
   HAL_GPIO_WritePin(GPIOH, GPIO_PIN_3, GPIO_PIN_SET);
@@ -131,22 +167,16 @@ int main(void) {
   HAL_CAN_Start(&hcan1);
   HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING);
 
-  for (int i = 0; i < 4; i++) {
-    PID_struct_init(&pid_spd[i], POSITION_PID, 20000, 20000, 5.0f, 1.0f, 0.0f);  // 4 motos angular rate closeloop.
-  }
+  PID_Parameter_Init();
   HAL_Delay(100);
 
   int key_sta = 2, key_cnt;
   while (1) {
-    for (int i = 0; i < 4; i++) {
-      pid_calc(&pid_spd[i], moto_chassis[i].speed_rpm, set_spd[i]);
-    }
-    set_moto_current(&hcan1, pid_spd[0].pos_out, pid_spd[1].pos_out, pid_spd[2].pos_out, pid_spd[3].pos_out);
     switch (key_sta) {
       case 0:
         if (0 == HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin)) {
           key_sta = 1;
-          HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);
+          HAL_GPIO_WritePin(LED8_GPIO_Port, LED8_Pin, GPIO_PIN_SET);
         }
         break;
       case 1:
@@ -160,7 +190,7 @@ int main(void) {
       case 2:
         if (0 != HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin)) {
           key_sta = 0;
-          HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
+          HAL_GPIO_WritePin(LED8_GPIO_Port, LED8_Pin, GPIO_PIN_RESET);
         }
         break;
     }
@@ -168,38 +198,21 @@ int main(void) {
     if (key_cnt > 4) {
       key_cnt = 0;  // 计数值超过10后归零
     }
-
-    switch (key_cnt) {  // 按键计数值在0-4之间循环
-      case 0:
-        stop_all_motors();
-        break;
-      case 1:
-        // 状态1：电机1、2保持固定速度，电机3、4切换到目标角度
-        set_spd[0] = set_spd[1] = 500;                    // 电机1、2速度为500
-        set_motor_position(&hcan1, 2, target_angles[0]);  // 电机3设置目标角度0
-        set_motor_position(&hcan1, 3, target_angles[0]);  // 电机4设置目标角度0
-        break;
-      case 2:
-        // 状态2：电机1、2保持固定速度，电机3、4切换到目标角度
-        set_spd[0] = set_spd[1] = 500;                    // 电机1、2速度为500
-        set_motor_position(&hcan1, 2, target_angles[1]);  // 电机3设置目标角度1
-        set_motor_position(&hcan1, 3, target_angles[1]);  // 电机4设置目标角度1
-        break;
-      case 3:
-        // 状态3：电机1、2保持固定速度，电机3、4切换到目标角度
-        set_spd[0] = set_spd[1] = 500;                    // 电机1、2速度为500
-        set_motor_position(&hcan1, 2, target_angles[2]);  // 电机3设置目标角度2
-        set_motor_position(&hcan1, 3, target_angles[2]);  // 电机4设置目标角度2
-        break;
-      case 4:
-        // 状态4：电机1、2保持固定速度，电机3、4切换到目标角度
-        set_spd[0] = set_spd[1] = 500;                    // 电机1、2速度为500
-        set_motor_position(&hcan1, 2, target_angles[3]);  // 电机3设置目标角度3
-        set_motor_position(&hcan1, 3, target_angles[3]);  // 电机4设置目标角度3
-        break;
+    float sp0, sp1, sp2, sp3, pos_out2, pos_out3;
+    handle_led(key_cnt);
+    if (key_cnt != 0) {
+      sp0 = pid_calc(&pid_spd[0], moto_chassis[0].speed_rpm, 5000);
+      sp1 = pid_calc(&pid_spd[1], moto_chassis[1].speed_rpm, -5000);
     }
+    // Corrected cascaded control for motors 2 and 3
+    pos_out2 = pid_calc(&pid_pos[2], moto_chassis[2].total_angle, target_angles[key_cnt - 1]);
+    sp2 = pid_calc(&pid_spd[2], moto_chassis[2].speed_rpm, pos_out2);  // Use position output as speed setpoint
 
-    HAL_Delay(10);
+    pos_out3 = pid_calc(&pid_pos[3], moto_chassis[3].total_angle, target_angles[key_cnt - 1]);
+    sp3 = pid_calc(&pid_spd[3], moto_chassis[3].speed_rpm, pos_out3);  // Use position output as speed setpoint
+
+    set_moto_current(&hcan1, (int16_t)sp0, (int16_t)sp1, (int16_t)sp2, (int16_t)sp3);
+    HAL_Delay(1);
 
     /* USER CODE END WHILE */
 
@@ -274,7 +287,7 @@ void Error_Handler(void) {
  * @param  line: assert_param error line source number
  * @retval None
  */
-void assert_failed(uint8_t* file, uint32_t line) {
+void assert_failed(uint8_t *file, uint32_t line) {
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line number,
      ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
